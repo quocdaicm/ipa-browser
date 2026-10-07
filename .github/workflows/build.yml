@@ -1,0 +1,40 @@
+name: Build IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip source
+        run: |
+          ZIP=$(find . -maxdepth 2 -iname "*.zip" -not -path "./.git/*" | head -n 1)
+          echo "Using $ZIP"
+          mkdir -p src && unzip -oq "$ZIP" -d src
+          PROJ=$(find src -name project.yml -not -path "*/__MACOSX/*" | head -n 1)
+          echo "PROJECT_DIR=$(dirname "$PROJ")" >> $GITHUB_ENV
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          xcodebuild -project ExtBrowser.xcodeproj -scheme ExtBrowser \
+            -configuration Release -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/ExtBrowser.app Payload/
+          zip -qr ExtBrowser.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ExtBrowser-ipa
+          path: ${{ env.PROJECT_DIR }}/ExtBrowser.ipa
